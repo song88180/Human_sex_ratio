@@ -1,0 +1,291 @@
+// Keywords: nonWF, non-Wright-Fisher, Wright-Fisher, non-overlapping generations, discrete generations
+
+initialize() {
+	//defineConstant("mu",1e-4);
+	//defineConstant("beta",0.1);
+	//defineConstant("rep",0);
+	defineConstant("PI_effect",0.1);
+	defineConstant("Gen_shift",26081);
+	defineConstant("Output_path",'./Human_mr' + format("%.0e", mu) + '_ms' + beta);
+	createDirectory(Output_path);
+	initializeSLiMModelType("nonWF");
+	initializeMutationType("m1", 0.5, "e", beta);
+	initializeMutationType("m2", 0.5, "e", -beta);
+	m1.convertToSubstitution = F;
+	m2.convertToSubstitution = F;
+	initializeGenomicElementType("g1", c(m1, m2), c(0.5, 0.5));
+	initializeGenomicElement(g1, 0, 999);
+	initializeMutationRate(mu*1e-3);
+	initializeRecombinationRate(1e-3);
+	initializeSex("A");
+}
+
+mutation(){
+        if (mut.selectionCoeff > 0.5)
+                mut.setSelectionCoeff(0.5);
+        else if (mut.selectionCoeff < -0.5)
+                mut.setSelectionCoeff(-0.5);
+        return T;
+}
+
+mutationEffect(m1) {
+	return 1.0;
+}
+
+mutationEffect(m2) {
+	return 1.0;
+}
+
+function (float)cal_herit(object<Subpopulation> p) {
+	//Females = p.sampleIndividuals(p.individualCount, replace = T, sex = "F");
+	Males = p.sampleIndividuals(p.individualCount, replace = T, sex = "M");
+	Exp_sex = 0.5 + Males.sumOfMutationsOfType(m1) + Males.sumOfMutationsOfType(m2);
+	Exp_sex[Exp_sex < 0.0] = 0.0;
+	Exp_sex[Exp_sex > 1.0] = 1.0;
+	Obs_sex = runif(p.individualCount) < Exp_sex;
+	H = var(Exp_sex)/var(asInteger(Obs_sex));
+	return H;
+}
+
+function (float)get_stats(object<Subpopulation> subpop){
+	Herit = cal_herit(subpop);
+	Sex_ratio = mean(subpop.individuals.sex == "M");
+	F_mut = sim.mutationFrequencies(subpop);
+	N_mut = sum((F_mut < 1-1e-8) & (F_mut > 1e-8));
+	N_sub = sum(F_mut >= 1-1e-8);
+	Theta = calcWattersonsTheta(subpop.genomes);
+	Het = calcHeterozygosity(subpop.genomes);
+	return c(Herit, Sex_ratio, N_mut, N_sub, Theta, Het);
+}
+
+function (void)output_summary(string suffix){
+	N_gen = sim.cycle;
+	stats_African = get_stats(p1);
+	if (exists("p2"))
+		stats_European = get_stats(p2);
+	else
+		stats_European = c("NA", "NA", "NA", "NA", "NA", "NA");
+	if (exists("p3"))
+		stats_Asian = get_stats(p3);
+	else
+		stats_Asian = c("NA", "NA", "NA", "NA", "NA", "NA");
+	out_str = paste(N_gen, stats_African, stats_European, stats_Asian, sep='\t');
+	writeFile(Output_path + '/Summary_' + suffix + '_' + rep + '.txt', out_str, append = T);
+}
+
+function (void)output_mut(object<Mutation> mut, string pop_name){
+	originTick = mut.getValue('originTick_' + pop_name);
+    endTick = mut.getValue('endTick_' + pop_name);
+	if (isNULL(originTick)){}
+	else if (endTick - originTick > 10){
+		AF_history = mut.getValue('AF_history_' + pop_name);
+		if (length(AF_history) > 0){
+			AF_history_line = paste(
+				mut.selectionCoeff,
+				originTick,
+				endTick,
+				paste(AF_history, sep=','),
+				sep='\t'
+			);
+			writeFile(Output_path + '/muts_' + pop_name + '_' + rep + '.txt', AF_history_line, append = T);
+		}
+	}
+}
+
+function (void)subpop_reproduce(object<Subpopulation> subpop){
+	K = subpop.getValue("K");
+	// parents are chosen randomly, irrespective of fitness
+	N_children = 0;
+	while (N_children < K){
+		parents1 = subpop.sampleIndividuals(1, sex='F');
+		parents2 = subpop.sampleIndividuals(1, sex='M');
+		Mate_prob = parents2.getValue('Mate_prob');
+		if (runif(1) < Mate_prob){
+			N_children = N_children + 1;
+			Exp_sex = 0.5 + parents2.sumOfMutationsOfType(m1) + parents2.sumOfMutationsOfType(m2);
+			if (Exp_sex > 1.0)
+				Exp_sex = 1.0;
+			else if (Exp_sex < 0.0)
+				Exp_sex = 0.0;
+			
+			child = subpop.addCrossed(parents1, parents2, sex=Exp_sex);
+			child.setValue('Mate_prob', 1.0);
+		
+			if ( (child.sex == 'F') & (sim.cycle >= 73105) )
+				parents2.setValue('Mate_prob', Mate_prob - PI_effect);
+		}
+	}
+}
+
+function (void)subpop_split(object<Subpopulation> p_source, object<Subpopulation> p_target){
+	K = p_target.getValue("K");
+	// parents are chosen randomly, irrespective of fitness
+	N_children = 0;
+	while (N_children < K){
+		parents1 = p_source.sampleIndividuals(1, sex='F');
+		parents2 = p_source.sampleIndividuals(1, sex='M');
+		Mate_prob = parents2.getValue('Mate_prob');
+		if (runif(1) < Mate_prob){
+			N_children = N_children + 1;
+			Exp_sex = 0.5 + parents2.sumOfMutationsOfType(m1) + parents2.sumOfMutationsOfType(m2);
+			if (Exp_sex > 1.0)
+				Exp_sex = 1.0;
+			else if (Exp_sex < 0.0)
+				Exp_sex = 0.0;
+			
+			child = p_target.addCrossed(parents1, parents2, sex=Exp_sex);
+			child.setValue('Mate_prob', 1.0);
+			
+			if ( (child.sex == 'F') & (sim.cycle >= 73105) )
+                                parents2.setValue('Mate_prob', Mate_prob - PI_effect);
+		}
+	}
+}
+
+reproduction() { 
+	subpop_reproduce(p1);
+
+	if (sim.cycle == 76969 + Gen_shift){
+		subpop_split(p1,p2);
+	}
+	if (sim.cycle == 78085 + Gen_shift){
+		subpop_split(p2,p3);
+	}	
+	
+	if (sim.cycle > 76969 + Gen_shift){
+		subpop_reproduce(p2);
+	}
+	
+	if (sim.cycle > 78085 + Gen_shift){
+		subpop_reproduce(p3);
+	}
+		
+	self.active = 0;
+}
+
+early()
+{
+	// parents die; offspring survive proportional to fitness
+	inds = sim.subpopulations.individuals;
+	inds[inds.age > 0].fitnessScaling = 0.0;
+}
+
+1 early() {
+	sim.addSubpop("p1", 7310);
+	p1.setValue("K", 7310);
+	
+	p1.individuals.setValue('Mate_prob', 1.0);
+	
+	for (pop_name in c('African', 'European', 'Asian'))
+		writeFile(Output_path + '/muts_' + pop_name + '_' + rep + '.txt', 'Effect\tStart\tEnd\tAF');
+	type = "all";
+	writeFile(
+		Output_path + '/Summary_' + type + '_' + rep + '.txt',
+		'N_gen\tHerit_African\tSex_ratio_African\tN_mut_African\tN_sub_African\tTheta_African\tHet_African\t' +
+		'Herit_European\tSex_ratio_European\tN_mut_European\tN_sub_European\tTheta_European\tHet_European\t' +
+		'Herit_Asian\tSex_ratio_Asian\tN_mut_Asian\tN_sub_Asian\tTheta_Asian\tHet_Asian'
+	);
+}
+
+99186 /* first expansion 73105 + 26081 */ early() { 
+	p1.setValue("K", 14474);
+}
+
+103049 /* split p2 from p1 76968 + 26081*/ late() {
+	sim.addSubpop("p2", 1861);
+	p2.setValue("K", 1861);
+}
+
+104165 /* split p3 from p2 78084 + 26081*/ late() {
+	sim.addSubpop("p3", 554);
+	p2.setValue("K", 1032);
+	p3.setValue("K", 554);
+}
+
+104166:105105 /* exponential growth 78085:79024 + 26081*/ early() {
+	t = sim.cycle - 78084 - 26081;
+	p2_size = round(1032.1046957333444 * (1 + 0.003784324268)^t);
+	p3_size = round(553.8181989 * (1 + 0.004780219543)^t);
+	p2.setValue("K", asInteger(p2_size));
+	p3.setValue("K", asInteger(p3_size));
+}
+
+1:105105 late() { // 79024 + 26081
+	if ( (sim.cycle >= 0) & (sim.cycle < 76968 + Gen_shift) & (sim.cycle % 100 == 0)){
+		output_summary('all');
+	}
+	
+	if ( (sim.cycle >= 76968 + Gen_shift) & (sim.cycle % 10 == 0)){
+		output_summary('all');
+	}
+
+	if ( (sim.cycle >= 76968 + Gen_shift) & (sim.cycle % 100 == 0)){
+		sim.outputMutations(sim.mutations, filePath=Output_path + '/AF_' + rep + '.txt', append = T);
+	}
+	
+	
+	if ( (sim.cycle >= 76968 + Gen_shift) & (sim.cycle % 5 == 0) ) {
+		muts = sim.mutations;
+
+		if (muts.length()>0){
+			Freqs_African = sim.mutationFrequencies(p1, muts);
+			if (exists("p2"))
+				Freqs_European = sim.mutationFrequencies(p2, muts);
+			else
+				Freqs_European = rep(0,length(muts));
+			if (exists("p3"))
+				Freqs_Asian = sim.mutationFrequencies(p3, muts);
+			else
+				Freqs_Asian = rep(0,length(muts));
+			
+			for (i in 0:(muts.length()-1)){
+				if ( (Freqs_African[i] > 1e-8) & (Freqs_African[i] < 1 - 1e-8) ){
+					if(isNULL(muts[i].getValue("originTick_African")))
+						muts[i].setValue("originTick_African", sim.cycle);
+					muts[i].appendKeysAndValuesFrom(Dictionary('AF_history_African',Freqs_African[i]));
+					muts[i].setValue("endTick_African", sim.cycle);
+				}
+				if ( (Freqs_European[i] > 1e-8) & (Freqs_European[i] < 1 - 1e-8) ){
+					if(isNULL(muts[i].getValue("originTick_European")))
+						muts[i].setValue("originTick_European", sim.cycle);
+					muts[i].appendKeysAndValuesFrom(Dictionary('AF_history_European',Freqs_European[i]));
+					muts[i].setValue("endTick_European", sim.cycle);
+				}
+				if ( (Freqs_Asian[i] > 1e-8) & (Freqs_Asian[i] < 1 - 1e-8) ){
+					if(isNULL(muts[i].getValue("originTick_Asian")))
+						muts[i].setValue("originTick_Asian", sim.cycle);
+					muts[i].appendKeysAndValuesFrom(Dictionary('AF_history_Asian',Freqs_Asian[i]));
+					muts[i].setValue("endTick_Asian", sim.cycle);
+				}
+			}
+		}
+
+		muts_prev = sim.getValue("muts_prev");
+		if (length(muts_prev)>0){
+			for (mut in muts_prev){
+				if (mut.isSegregating == F){
+					output_mut(mut,'African');
+					output_mut(mut,'European');
+					output_mut(mut,'Asian');
+				}
+			}
+		}
+		sim.setValue("muts_prev", muts);
+	}
+	
+	if ( sim.cycle % 100 == 0){
+		print(sim.cycle);
+	}
+	//sim.outputFixedMutations();
+}
+
+105105 late() { // 79024 + 26081
+	sim.simulationFinished();
+	muts = sim.mutations;
+	for (mut in muts){
+		output_mut(mut,'African');
+		output_mut(mut,'European');
+		output_mut(mut,'Asian');
+	}
+}
+
