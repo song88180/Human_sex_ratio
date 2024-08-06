@@ -131,5 +131,3 @@ for Chr_idx in list(range(1,23))+['X']:
 
     var_df.to_csv(f'Allele_table_from_height_resid/Allele_table_from_height_resid_chr{Chr_idx}_rep{rep}.tsv',sep='\t',index=False)
 
-
-os.system(f'/bin/bash ./merge_Allele_table_from_height_resid.sh {rep}')

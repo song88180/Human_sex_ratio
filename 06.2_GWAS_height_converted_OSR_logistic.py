@@ -1,5 +1,4 @@
 import numpy as np
-# from bed_reader import open_bed, sample_file
 import time
 import pandas as pd
 from pgenlib import PgenReader
@@ -51,8 +50,6 @@ for i in range(len(df_all)):
 
     res = glm.fit()
     
-    #bse, F, P = get_stats(res)
-
     beta_list.append(res.params[1])
     se_list.append(res.bse[1])
     P_list.append(res.pvalues[1])
