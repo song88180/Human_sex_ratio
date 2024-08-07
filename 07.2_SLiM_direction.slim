@@ -1,14 +1,10 @@
-// Keywords: nonWF, non-Wright-Fisher, Wright-Fisher, non-overlapping generations, discrete generations
-
 initialize() {
-	//defineConstant("mu",1e-4);
-	//defineConstant("beta",0.1);
-	//defineConstant("rep",0);
-	defineConstant("PI_effect",0.1);
+	// will read "mu" (mutation rate), "beta" (effect size), and "rep" from command line
+	defineConstant("PI_effect",0.1); // Set biased parental investment on boys and girls, so that the optimal population sex ratio deviates from 0.5
 	defineConstant("Gen_shift",26081);
 	defineConstant("Output_path",'./Human_mr' + format("%.0e", mu) + '_ms' + beta);
 	createDirectory(Output_path);
-	initializeSLiMModelType("nonWF");
+	initializeSLiMModelType("nonWF"); // Use non-Wright-Fisher model
 	initializeMutationType("m1", 0.5, "e", beta);
 	initializeMutationType("m2", 0.5, "e", -beta);
 	m1.convertToSubstitution = F;
@@ -17,15 +13,16 @@ initialize() {
 	initializeGenomicElement(g1, 0, 999);
 	initializeMutationRate(mu*1e-3);
 	initializeRecombinationRate(1e-3);
-	initializeSex("A");
+	initializeSex("A"); // Initialize sex as autosomal
 }
 
 mutation(){
-        if (mut.selectionCoeff > 0.5)
-                mut.setSelectionCoeff(0.5);
-        else if (mut.selectionCoeff < -0.5)
-                mut.setSelectionCoeff(-0.5);
-        return T;
+	// Cap selection coefficients to ±0.5
+	if (mut.selectionCoeff > 0.5)
+		mut.setSelectionCoeff(0.5);
+	else if (mut.selectionCoeff < -0.5)
+		mut.setSelectionCoeff(-0.5);
+	return T;
 }
 
 mutationEffect(m1) {
@@ -37,7 +34,7 @@ mutationEffect(m2) {
 }
 
 function (float)cal_herit(object<Subpopulation> p) {
-	//Females = p.sampleIndividuals(p.individualCount, replace = T, sex = "F");
+	// Calculate heritability based on mutations in males
 	Males = p.sampleIndividuals(p.individualCount, replace = T, sex = "M");
 	Exp_sex = 0.5 + Males.sumOfMutationsOfType(m1) + Males.sumOfMutationsOfType(m2);
 	Exp_sex[Exp_sex < 0.0] = 0.0;
@@ -48,6 +45,7 @@ function (float)cal_herit(object<Subpopulation> p) {
 }
 
 function (float)get_stats(object<Subpopulation> subpop){
+	// Gather various statistics for a subpopulation
 	Herit = cal_herit(subpop);
 	Sex_ratio = mean(subpop.individuals.sex == "M");
 	F_mut = sim.mutationFrequencies(subpop);
@@ -59,6 +57,7 @@ function (float)get_stats(object<Subpopulation> subpop){
 }
 
 function (void)output_summary(string suffix){
+	// Output summary statistics for different subpopulations
 	N_gen = sim.cycle;
 	stats_African = get_stats(p1);
 	if (exists("p2"))
@@ -74,8 +73,9 @@ function (void)output_summary(string suffix){
 }
 
 function (void)output_mut(object<Mutation> mut, string pop_name){
+	// Record mutation details if they persist for more than 10 cycles
 	originTick = mut.getValue('originTick_' + pop_name);
-    endTick = mut.getValue('endTick_' + pop_name);
+	endTick = mut.getValue('endTick_' + pop_name);
 	if (isNULL(originTick)){}
 	else if (endTick - originTick > 10){
 		AF_history = mut.getValue('AF_history_' + pop_name);
@@ -93,6 +93,7 @@ function (void)output_mut(object<Mutation> mut, string pop_name){
 }
 
 function (void)subpop_reproduce(object<Subpopulation> subpop){
+	// Handle reproduction within a subpopulation
 	K = subpop.getValue("K");
 	// parents are chosen randomly, irrespective of fitness
 	N_children = 0;
@@ -112,12 +113,14 @@ function (void)subpop_reproduce(object<Subpopulation> subpop){
 			child.setValue('Mate_prob', 1.0);
 		
 			if ( (child.sex == 'F') & (sim.cycle >= 73105) )
+				// Having a girl decreases the mating probability
 				parents2.setValue('Mate_prob', Mate_prob - PI_effect);
 		}
 	}
 }
 
 function (void)subpop_split(object<Subpopulation> p_source, object<Subpopulation> p_target){
+	// Split a source subpopulation into a target subpopulation
 	K = p_target.getValue("K");
 	// parents are chosen randomly, irrespective of fitness
 	N_children = 0;
@@ -137,12 +140,14 @@ function (void)subpop_split(object<Subpopulation> p_source, object<Subpopulation
 			child.setValue('Mate_prob', 1.0);
 			
 			if ( (child.sex == 'F') & (sim.cycle >= 73105) )
-                                parents2.setValue('Mate_prob', Mate_prob - PI_effect);
+				// Having a girl decreases the mating probability
+				parents2.setValue('Mate_prob', Mate_prob - PI_effect);
 		}
 	}
 }
 
 reproduction() { 
+	// Manage reproduction across subpopulations and handle splits at specified cycles
 	subpop_reproduce(p1);
 
 	if (sim.cycle == 76969 + Gen_shift){
@@ -163,14 +168,14 @@ reproduction() {
 	self.active = 0;
 }
 
-early()
-{
+early() {
 	// parents die; offspring survive proportional to fitness
 	inds = sim.subpopulations.individuals;
 	inds[inds.age > 0].fitnessScaling = 0.0;
 }
 
 1 early() {
+	// Initialize the first subpopulation and output files
 	sim.addSubpop("p1", 7310);
 	p1.setValue("K", 7310);
 	
@@ -211,6 +216,7 @@ early()
 }
 
 1:105105 late() { // 79024 + 26081
+	// Periodic output of summaries and mutation frequencies
 	if ( (sim.cycle >= 0) & (sim.cycle < 76968 + Gen_shift) & (sim.cycle % 100 == 0)){
 		output_summary('all');
 	}
@@ -226,7 +232,8 @@ early()
 	
 	if ( (sim.cycle >= 76968 + Gen_shift) & (sim.cycle % 5 == 0) ) {
 		muts = sim.mutations;
-
+		
+		// Record allele frequency history
 		if (muts.length()>0){
 			Freqs_African = sim.mutationFrequencies(p1, muts);
 			if (exists("p2"))
@@ -259,7 +266,8 @@ early()
 				}
 			}
 		}
-
+		
+		// output the mutation if it get fixed or extinct 
 		muts_prev = sim.getValue("muts_prev");
 		if (length(muts_prev)>0){
 			for (mut in muts_prev){
@@ -276,10 +284,10 @@ early()
 	if ( sim.cycle % 100 == 0){
 		print(sim.cycle);
 	}
-	//sim.outputFixedMutations();
 }
 
 105105 late() { // 79024 + 26081
+	// Final outputs at the end of the simulation
 	sim.simulationFinished();
 	muts = sim.mutations;
 	for (mut in muts){
